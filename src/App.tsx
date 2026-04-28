@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Activity, 
   BookOpen, 
@@ -7,12 +7,21 @@ import {
   Users, 
   CheckCircle2, 
   Flame,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft,
+  Sunrise,
+  Sunset
 } from 'lucide-react';
+import { useStore } from '@/store/useStore';
+import { FitnessModule } from '@/components/fitness/FitnessModule';
+import { KanbanModule } from '@/components/relationships/KanbanModule';
+import { LearningModule } from '@/components/learning/LearningModule';
+import { AuthScreen } from '@/components/auth/AuthScreen';
+import { supabase } from '@/lib/supabase';
 
 // Simplified UI Components
-const Card = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-  <div className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm overflow-hidden ${className}`}>
+const Card = ({ children, className = '', onClick }: { children: React.ReactNode, className?: string, onClick?: () => void }) => (
+  <div onClick={onClick} className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm overflow-hidden ${className}`}>
     {children}
   </div>
 );
@@ -41,102 +50,261 @@ const ProgressBar = ({ value }: { value: number }) => (
 );
 
 export default function App() {
+  const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [dailyProgress, setDailyProgress] = useState(35); // Mock progress
+  const { dailyProgress, fetchData } = useStore();
+  
+  // Rituals State
+  const [showStartRitual, setShowStartRitual] = useState(true);
+  const [showEndRitual, setShowEndRitual] = useState(false);
 
-  if (activeTab !== 'dashboard') {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center dark">
-        <h2 className="text-2xl font-bold mb-4">Módulo: {activeTab}</h2>
-        <Button onClick={() => setActiveTab('dashboard')} className="max-w-xs">Volver al Dashboard</Button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+      if (session) fetchData();
+    });
 
-  const modules = [
-    { id: 'fitness', title: 'Entrenamiento', icon: <Activity className="w-6 h-6" />, color: 'text-orange-500' },
-    { id: 'learning', title: 'Estudios & Cursos', icon: <BookOpen className="w-6 h-6" />, color: 'text-blue-500' },
-    { id: 'agenda', title: 'Agenda & Citas', icon: <CalendarIcon className="w-6 h-6" />, color: 'text-purple-500' },
-    { id: 'relationships', title: 'Partners Control', icon: <Users className="w-6 h-6" />, color: 'text-rose-500' },
-  ];
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) fetchData();
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const handleStartSelection = (selection: string) => {
+    console.log("Enfoque seleccionado:", selection);
+    setShowStartRitual(false);
+  };
+
+  if (authLoading) return <div className="min-h-screen flex items-center justify-center">Cargando...</div>;
+  if (!session) return <AuthScreen onAuthSuccess={() => setAuthLoading(false)} />;
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'fitness':
+        return <FitnessModule />;
+      case 'relationships':
+        return <KanbanModule />;
+      case 'learning':
+        return <LearningModule />;
+      case 'agenda':
+        return (
+          <div className="text-center p-8 border border-dashed rounded-xl mt-8">
+            <CalendarIcon className="w-12 h-12 text-purple-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Agenda (En Construcción)</h2>
+            <p className="text-muted-foreground">Pronto podrás organizar tus citas y reuniones aquí.</p>
+          </div>
+        );
+      default:
+        return (
+          <>
+            {/* Command Center - Daily Summary */}
+            <section className="space-y-4 animate-in fade-in duration-500">
+              <div className="text-center py-6">
+                <h2 className="text-3xl font-light mb-2">Buen día, CEO.</h2>
+                <p className="text-muted-foreground text-sm max-w-[280px] mx-auto italic">
+                  "La verdad es lo que funciona. El resto es ruido."
+                </p>
+              </div>
+
+              <Card className="p-6 bg-gradient-to-br from-card to-accent/20">
+                <div className="flex justify-between items-end mb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium mb-1">PROGRESO DIARIO</p>
+                    <h3 className="text-4xl font-bold">{dailyProgress}%</h3>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                </div>
+                <ProgressBar value={dailyProgress} />
+                <p className="text-xs text-muted-foreground mt-3">Racha activa: Mantén el ritmo.</p>
+              </Card>
+            </section>
+
+            {/* Quick Actions / Modules */}
+            <section className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <h3 className="font-semibold text-lg px-1 mt-6">Módulos de Sistema</h3>
+              <div className="grid grid-cols-1 gap-3">
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('fitness')}>
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-lg bg-accent/50 text-orange-500`}>
+                        <Activity className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg">Entrenamiento</h4>
+                        <p className="text-xs text-muted-foreground">Toca para gestionar</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
+
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('learning')}>
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-lg bg-accent/50 text-blue-500`}>
+                        <BookOpen className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg">Estudios & Cursos</h4>
+                        <p className="text-xs text-muted-foreground">Toca para gestionar</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
+
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('relationships')}>
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-lg bg-accent/50 text-rose-500`}>
+                        <Users className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg">Partners Control</h4>
+                        <p className="text-xs text-muted-foreground">Toca para gestionar</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
+              </div>
+            </section>
+
+            {/* End Day Button */}
+            <section className="pt-8 pb-4">
+              <Button 
+                variant="outline"
+                className="w-full py-6 rounded-xl border-dashed hover:bg-destructive/10 hover:text-destructive hover:border-destructive transition-colors"
+                onClick={() => setShowEndRitual(true)}
+              >
+                <Sunset className="w-5 h-5 mr-2" /> Descompresión Evaluativa (Cerrar Día)
+              </Button>
+            </section>
+          </>
+        );
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-20 md:pb-0 dark">
+    <div className="min-h-screen bg-background text-foreground pb-20 md:pb-0 dark font-sans">
       {/* Top Bar */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Target className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-bold tracking-tight">KAIZEN</h1>
+      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-4 py-4 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          {activeTab !== 'dashboard' && (
+            <button 
+              onClick={() => setActiveTab('dashboard')}
+              className="p-1 -ml-1 rounded-md hover:bg-accent text-muted-foreground"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          <div className="flex items-center gap-2">
+            <Target className="w-6 h-6 text-primary" />
+            <h1 className="text-xl font-bold tracking-tight">KAIZEN</h1>
+          </div>
         </div>
-        <div className="flex items-center gap-1 text-orange-500 font-bold">
-          <Flame className="w-5 h-5 fill-current" />
-          <span>Día 12</span>
+        <div className="flex items-center gap-4">
+          <button onClick={handleLogout} className="text-xs text-muted-foreground hover:text-destructive font-bold uppercase tracking-wider">
+            Salir
+          </button>
+          <div className="flex items-center gap-1 text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded-md">
+            <Flame className="w-4 h-4 fill-current" />
+            <span className="text-sm">Día 12</span>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-4 space-y-6">
-        
-        {/* Command Center - Daily Summary */}
-        <section className="space-y-4">
-          <div className="text-center py-6">
-            <h2 className="text-3xl font-light mb-2">Buen día, CEO.</h2>
-            <p className="text-muted-foreground text-sm max-w-[280px] mx-auto italic">
-              "La verdad es lo que funciona. El resto es ruido."
-            </p>
-          </div>
+      <main className="max-w-md mx-auto p-4">
+        {renderContent()}
+      </main>
 
-          <Card className="p-6 bg-gradient-to-br from-card to-accent/20">
-            <div className="flex justify-between items-end mb-4">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium mb-1">PROGRESO DIARIO</p>
-                <h3 className="text-4xl font-bold">{dailyProgress}%</h3>
+      {/* RITUAL DE ARRANQUE */}
+      {showStartRitual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/95 backdrop-blur-md">
+          <div className="max-w-sm w-full space-y-6 text-center animate-in zoom-in-95 duration-500 max-h-[90vh] overflow-y-auto py-4">
+            <Sunrise className="w-16 h-16 text-yellow-500 mx-auto" />
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Filtro de Arranque</h2>
+              <p className="text-muted-foreground">Para desbloquear el sistema, define tu enfoque.</p>
+            </div>
+            
+            <div className="space-y-4 pt-4">
+              <div className="text-left mb-2">
+                <label className="text-sm font-bold text-muted-foreground">Selecciona tu objetivo principal:</label>
               </div>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <CheckCircle2 className="w-6 h-6" />
+              <Button 
+                onClick={() => handleStartSelection('Plus Gráfica')} 
+                className="w-full py-8 rounded-xl text-lg font-bold bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border"
+              >
+                Avance en Plus Gráfica
+              </Button>
+              <Button 
+                onClick={() => handleStartSelection('Tesis')} 
+                className="w-full py-8 rounded-xl text-lg font-bold bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border"
+              >
+                Avance en Tesis
+              </Button>
+              <Button 
+                onClick={() => handleStartSelection('Otro')} 
+                variant="outline"
+                className="w-full py-6 rounded-xl text-sm font-bold border-dashed"
+              >
+                Otro enfoque crítico
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RITUAL DE CIERRE */}
+      {showEndRitual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/95 backdrop-blur-md">
+          <div className="max-w-sm w-full space-y-6 text-center animate-in slide-in-from-bottom-10 duration-500 max-h-[90vh] overflow-y-auto py-4">
+            <Sunset className="w-16 h-16 text-indigo-500 mx-auto" />
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Descompresión Evaluativa</h2>
+              <p className="text-muted-foreground">La teoría sin aplicación es ruido.</p>
+            </div>
+            
+            <div className="bg-card border border-border p-5 rounded-xl text-left space-y-4">
+              <div>
+                <p className="text-sm font-bold mb-1">Tu progreso de hoy:</p>
+                <h3 className="text-3xl font-black text-primary">{dailyProgress}%</h3>
+              </div>
+              
+              <div className="space-y-2 pt-2 border-t border-border">
+                <label className="text-sm font-bold">¿Qué se refactoriza para mañana?</label>
+                <textarea 
+                  placeholder="Escribe tus lecciones del día..."
+                  className="w-full bg-secondary border border-border p-3 rounded-lg outline-none min-h-[100px] resize-none"
+                />
               </div>
             </div>
-            <ProgressBar value={dailyProgress} />
-            <p className="text-xs text-muted-foreground mt-3">2 de 5 misiones completadas hoy.</p>
-          </Card>
-        </section>
 
-        {/* Quick Actions / Modules */}
-        <section className="space-y-3">
-          <h3 className="font-semibold text-lg px-1">Módulos de Sistema</h3>
-          <div className="grid grid-cols-1 gap-3">
-            {modules.map((mod) => (
-              <Card key={mod.id} className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]">
-                <div 
-                  className="p-4 flex items-center justify-between"
-                  onClick={() => setActiveTab(mod.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-lg bg-accent/50 ${mod.color}`}>
-                      {mod.icon}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-lg">{mod.title}</h4>
-                      <p className="text-xs text-muted-foreground">Toca para gestionar</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                </div>
-              </Card>
-            ))}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setShowEndRitual(false)} className="flex-1">
+                Cancelar
+              </Button>
+              <Button onClick={() => setShowEndRitual(false)} className="flex-1">
+                Completar Día
+              </Button>
+            </div>
           </div>
-        </section>
+        </div>
+      )}
 
-        {/* Quick Log Button */}
-        <section className="pt-4">
-          <Button 
-            className="w-full text-lg py-6 rounded-xl shadow-lg bg-primary hover:bg-primary/90"
-            onClick={() => setDailyProgress(prev => Math.min(prev + 10, 100))}
-          >
-            Registrar Victoria Rápida
-          </Button>
-        </section>
-
-      </main>
     </div>
   );
 }
