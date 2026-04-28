@@ -1,25 +1,28 @@
 import { useState, useEffect } from 'react';
-import { 
-  Activity, 
-  BookOpen, 
-  Calendar as CalendarIcon, 
-  Target, 
-  Users, 
-  CheckCircle2, 
+import {
+  Activity,
+  BookOpen,
+  Target,
+  Users,
+  CheckCircle2,
   Flame,
   ChevronRight,
   ChevronLeft,
   Sunrise,
-  Sunset
+  Sunset,
+  CalendarDays,
+  TrendingUp,
+  Clock,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { FitnessModule } from '@/components/fitness/FitnessModule';
 import { KanbanModule } from '@/components/relationships/KanbanModule';
 import { LearningModule } from '@/components/learning/LearningModule';
+import { AgendaModule } from '@/components/agenda/AgendaModule';
+import { OKRModule } from '@/components/okr/OKRModule';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { supabase } from '@/lib/supabase';
 
-// Simplified UI Components
 const Card = ({ children, className = '', onClick }: { children: React.ReactNode, className?: string, onClick?: () => void }) => (
   <div onClick={onClick} className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm overflow-hidden ${className}`}>
     {children}
@@ -42,22 +45,29 @@ const Button = ({ children, onClick, variant = 'default', className = '' }: any)
 
 const ProgressBar = ({ value }: { value: number }) => (
   <div className="relative w-full h-4 overflow-hidden rounded-full bg-secondary">
-    <div 
-      className="h-full bg-primary transition-all duration-500 ease-in-out" 
-      style={{ width: `${value}%` }} 
+    <div
+      className="h-full bg-primary transition-all duration-500 ease-in-out"
+      style={{ width: `${value}%` }}
     />
   </div>
 );
+
+const TYPE_COLORS: Record<string, string> = {
+  work: 'bg-blue-500/20 text-blue-400',
+  social: 'bg-rose-500/20 text-rose-400',
+  health: 'bg-orange-500/20 text-orange-400',
+  ritual: 'bg-purple-500/20 text-purple-400',
+};
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { dailyProgress, fetchData } = useStore();
-  
-  // Rituals State
+  const { dailyProgress, fetchData, streak, events, logDayStart, saveReflection } = useStore();
+
   const [showStartRitual, setShowStartRitual] = useState(true);
   const [showEndRitual, setShowEndRitual] = useState(false);
+  const [reflection, setReflection] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -66,9 +76,7 @@ export default function App() {
       if (session) fetchData();
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) fetchData();
     });
@@ -80,13 +88,26 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
-  const handleStartSelection = (selection: string) => {
-    console.log("Enfoque seleccionado:", selection);
+  const handleStartSelection = async (selection: string) => {
+    await logDayStart(selection);
     setShowStartRitual(false);
+  };
+
+  const handleCloseDay = async () => {
+    await saveReflection(reflection);
+    setShowEndRitual(false);
+    setReflection('');
   };
 
   if (authLoading) return <div className="min-h-screen flex items-center justify-center">Cargando...</div>;
   if (!session) return <AuthScreen onAuthSuccess={() => setAuthLoading(false)} />;
+
+  // Agenda preview: eventos de hoy ordenados
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const todayEvents = events
+    .filter(e => e.eventDate === todayStr)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .slice(0, 3);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -97,17 +118,13 @@ export default function App() {
       case 'learning':
         return <LearningModule />;
       case 'agenda':
-        return (
-          <div className="text-center p-8 border border-dashed rounded-xl mt-8">
-            <CalendarIcon className="w-12 h-12 text-purple-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold mb-2">Agenda (En Construcción)</h2>
-            <p className="text-muted-foreground">Pronto podrás organizar tus citas y reuniones aquí.</p>
-          </div>
-        );
+        return <AgendaModule />;
+      case 'okr':
+        return <OKRModule />;
       default:
         return (
           <>
-            {/* Command Center - Daily Summary */}
+            {/* Command Center */}
             <section className="space-y-4 animate-in fade-in duration-500">
               <div className="text-center py-6">
                 <h2 className="text-3xl font-light mb-2">Buen día, CEO.</h2>
@@ -127,18 +144,45 @@ export default function App() {
                   </div>
                 </div>
                 <ProgressBar value={dailyProgress} />
-                <p className="text-xs text-muted-foreground mt-3">Racha activa: Mantén el ritmo.</p>
+                <p className="text-xs text-muted-foreground mt-3">
+                  {streak > 0 ? `Racha activa: ${streak} día${streak !== 1 ? 's' : ''} consecutivo${streak !== 1 ? 's' : ''}.` : 'Completa el día para iniciar tu racha.'}
+                </p>
               </Card>
             </section>
 
-            {/* Quick Actions / Modules */}
+            {/* Agenda Preview */}
+            {todayEvents.length > 0 && (
+              <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center justify-between mb-2 px-1 mt-6">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-purple-500" /> Hoy
+                  </h3>
+                  <button onClick={() => setActiveTab('agenda')} className="text-xs text-primary font-bold">
+                    Ver todo →
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {todayEvents.map(event => (
+                    <div key={event.id} className={`flex items-center gap-3 p-3 rounded-xl ${TYPE_COLORS[event.type]} border border-current/10`}>
+                      <div className="text-xs font-bold w-10 shrink-0 text-center">
+                        {event.startTime.slice(0, 5)}
+                      </div>
+                      <div className="w-px h-5 bg-current opacity-30" />
+                      <span className="text-sm font-semibold truncate">{event.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Módulos */}
             <section className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
               <h3 className="font-semibold text-lg px-1 mt-6">Módulos de Sistema</h3>
               <div className="grid grid-cols-1 gap-3">
                 <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('fitness')}>
                   <div className="p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg bg-accent/50 text-orange-500`}>
+                      <div className="p-3 rounded-lg bg-accent/50 text-orange-500">
                         <Activity className="w-6 h-6" />
                       </div>
                       <div>
@@ -153,7 +197,7 @@ export default function App() {
                 <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('learning')}>
                   <div className="p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg bg-accent/50 text-blue-500`}>
+                      <div className="p-3 rounded-lg bg-accent/50 text-blue-500">
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
@@ -168,7 +212,7 @@ export default function App() {
                 <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('relationships')}>
                   <div className="p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg bg-accent/50 text-rose-500`}>
+                      <div className="p-3 rounded-lg bg-accent/50 text-rose-500">
                         <Users className="w-6 h-6" />
                       </div>
                       <div>
@@ -179,12 +223,42 @@ export default function App() {
                     <ChevronRight className="w-5 h-5 text-muted-foreground" />
                   </div>
                 </Card>
+
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('agenda')}>
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-lg bg-accent/50 text-purple-500">
+                        <CalendarDays className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg">Agenda Pro</h4>
+                        <p className="text-xs text-muted-foreground">Toca para gestionar</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
+
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer active:scale-[0.98]" onClick={() => setActiveTab('okr')}>
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-lg bg-accent/50 text-blue-500">
+                        <TrendingUp className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg">OKR / Metas</h4>
+                        <p className="text-xs text-muted-foreground">Toca para gestionar</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
               </div>
             </section>
 
-            {/* End Day Button */}
+            {/* Cerrar Día */}
             <section className="pt-8 pb-4">
-              <Button 
+              <Button
                 variant="outline"
                 className="w-full py-6 rounded-xl border-dashed hover:bg-destructive/10 hover:text-destructive hover:border-destructive transition-colors"
                 onClick={() => setShowEndRitual(true)}
@@ -203,7 +277,7 @@ export default function App() {
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-4 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           {activeTab !== 'dashboard' && (
-            <button 
+            <button
               onClick={() => setActiveTab('dashboard')}
               className="p-1 -ml-1 rounded-md hover:bg-accent text-muted-foreground"
             >
@@ -221,7 +295,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-1 text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded-md">
             <Flame className="w-4 h-4 fill-current" />
-            <span className="text-sm">Día 12</span>
+            <span className="text-sm">Día {streak}</span>
           </div>
         </div>
       </header>
@@ -239,25 +313,25 @@ export default function App() {
               <h2 className="text-2xl font-bold mb-2">Filtro de Arranque</h2>
               <p className="text-muted-foreground">Para desbloquear el sistema, define tu enfoque.</p>
             </div>
-            
+
             <div className="space-y-4 pt-4">
               <div className="text-left mb-2">
                 <label className="text-sm font-bold text-muted-foreground">Selecciona tu objetivo principal:</label>
               </div>
-              <Button 
-                onClick={() => handleStartSelection('Plus Gráfica')} 
+              <Button
+                onClick={() => handleStartSelection('Plus Gráfica')}
                 className="w-full py-8 rounded-xl text-lg font-bold bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border"
               >
                 Avance en Plus Gráfica
               </Button>
-              <Button 
-                onClick={() => handleStartSelection('Tesis')} 
+              <Button
+                onClick={() => handleStartSelection('Tesis')}
                 className="w-full py-8 rounded-xl text-lg font-bold bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border"
               >
                 Avance en Tesis
               </Button>
-              <Button 
-                onClick={() => handleStartSelection('Otro')} 
+              <Button
+                onClick={() => handleStartSelection('Otro')}
                 variant="outline"
                 className="w-full py-6 rounded-xl text-sm font-bold border-dashed"
               >
@@ -277,18 +351,20 @@ export default function App() {
               <h2 className="text-2xl font-bold mb-2">Descompresión Evaluativa</h2>
               <p className="text-muted-foreground">La teoría sin aplicación es ruido.</p>
             </div>
-            
+
             <div className="bg-card border border-border p-5 rounded-xl text-left space-y-4">
               <div>
                 <p className="text-sm font-bold mb-1">Tu progreso de hoy:</p>
                 <h3 className="text-3xl font-black text-primary">{dailyProgress}%</h3>
               </div>
-              
+
               <div className="space-y-2 pt-2 border-t border-border">
                 <label className="text-sm font-bold">¿Qué se refactoriza para mañana?</label>
-                <textarea 
+                <textarea
+                  value={reflection}
+                  onChange={e => setReflection(e.target.value)}
                   placeholder="Escribe tus lecciones del día..."
-                  className="w-full bg-secondary border border-border p-3 rounded-lg outline-none min-h-[100px] resize-none"
+                  className="w-full bg-secondary border border-border p-3 rounded-lg outline-none min-h-[100px] resize-none focus:border-primary"
                 />
               </div>
             </div>
@@ -297,14 +373,13 @@ export default function App() {
               <Button variant="outline" onClick={() => setShowEndRitual(false)} className="flex-1">
                 Cancelar
               </Button>
-              <Button onClick={() => setShowEndRitual(false)} className="flex-1">
+              <Button onClick={handleCloseDay} className="flex-1">
                 Completar Día
               </Button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }
