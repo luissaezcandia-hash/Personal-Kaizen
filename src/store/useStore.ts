@@ -196,6 +196,8 @@ export const useStore = create<AppState>()((set, get) => ({
         handleSupabaseError(errors[0], 'Hubo un problema al cargar algunos datos. Refrescá la página.');
       }
 
+      console.log('[DEBUG FETCH] Routines fetched:', routinesRes.data?.length, 'Tasks fetched:', tasksRes.data?.length);
+
       const tasks = tasksRes.data || []
       const routines = (routinesRes.data || []).map((r: any) => ({
         id: r.id,

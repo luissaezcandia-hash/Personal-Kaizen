@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 
 const dateStr = (offsetDays: number): string => {
   const d = new Date()
@@ -166,4 +167,6 @@ export async function seedDemoData(): Promise<void> {
   } else {
      console.error('[SEED ERROR] Inserted routines were empty or not exactly 3.', insertedRoutines);
   }
+
+  toast.success('Datos de demostración cargados correctamente.');
 }
