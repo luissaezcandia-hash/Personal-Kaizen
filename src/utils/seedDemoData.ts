@@ -132,15 +132,19 @@ export async function seedDemoData(): Promise<void> {
   ])
 
   // ── ROUTINES & TASKS (FITNESS) ───────────────────────────────────────────
-  const { data: insertedRoutines } = await supabase.from('routines').insert([
+  const { data: insertedRoutines, error: routinesError } = await supabase.from('routines').insert([
     { user_id: uid, name: 'Rutina Fuerza (Empuje)' },
     { user_id: uid, name: 'Rutina Fuerza (Jalón)' },
     { user_id: uid, name: 'Movilidad & Core' },
   ]).select()
 
+  if (routinesError) {
+    console.error('[SEED ERROR] Failed to insert routines:', routinesError);
+  }
+
   if (insertedRoutines && insertedRoutines.length === 3) {
     const [push, pull, core] = insertedRoutines
-    await supabase.from('tasks').insert([
+    const { error: tasksError } = await supabase.from('tasks').insert([
       // Empuje
       { user_id: uid, routine_id: push.id, title: 'Press de Banca 4x8', completed: false },
       { user_id: uid, routine_id: push.id, title: 'Press Militar 3x10', completed: false },
@@ -155,5 +159,11 @@ export async function seedDemoData(): Promise<void> {
       { user_id: uid, routine_id: core.id, title: 'Rueda abdominal 3x10', completed: false },
       { user_id: uid, routine_id: core.id, title: 'Estiramiento dinámico 10 min', completed: false },
     ])
+    
+    if (tasksError) {
+      console.error('[SEED ERROR] Failed to insert tasks:', tasksError);
+    }
+  } else {
+     console.error('[SEED ERROR] Inserted routines were empty or not exactly 3.', insertedRoutines);
   }
 }
