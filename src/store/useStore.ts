@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
+import type { RefactorSuggestion } from '@/lib/ai-agent'
 
 interface Task {
   id: string
@@ -13,7 +14,7 @@ interface Routine {
   tasks: Task[]
 }
 
-interface Contact {
+export interface Contact {
   id: string
   name: string
   phase: 'A' | 'B' | 'C'
@@ -23,6 +24,16 @@ interface Contact {
   whatsapp?: string
   birthday?: string
   notes?: string
+  tags: string[]
+  contactFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'none'
+  relationshipType: 'personal' | 'professional' | 'family' | 'friend'
+  interactions: Interaction[]
+}
+
+export interface Interaction {
+  id: string
+  date: string
+  notes: string
 }
 
 interface Course {
@@ -82,9 +93,11 @@ interface AppState {
   incrementProgress: (amount: number) => void
   toggleTask: (routineId: string, taskId: string) => Promise<void>
   moveContact: (contactId: string, newPhase: 'A' | 'B' | 'C') => Promise<void>
-  addContact: (contact: Omit<Contact, 'id'>) => Promise<void>
+  addContact: (contact: Omit<Contact, 'id' | 'tags' | 'contactFrequency' | 'relationshipType' | 'interactions'>) => Promise<void>
   updateContact: (id: string, contact: Partial<Omit<Contact, 'id'>>) => Promise<void>
   deleteContact: (id: string) => Promise<void>
+  addInteraction: (contactId: string, interaction: Interaction) => Promise<void>
+  getFilteredContacts: (search: string) => Contact[]
   addTask: (routineId: string, title: string) => Promise<void>
   updateTask: (routineId: string, taskId: string, title: string) => Promise<void>
   deleteTask: (routineId: string, taskId: string) => Promise<void>
@@ -104,6 +117,11 @@ interface AppState {
   addKeyResult: (kr: Omit<KeyResult, 'id'>) => Promise<void>
   updateKeyResult: (id: string, objectiveId: string, currentValue: number) => Promise<void>
   deleteKeyResult: (id: string, objectiveId: string) => Promise<void>
+  // AI Suggestions
+  aiSuggestions: RefactorSuggestion[]
+  addAISuggestions: (suggestions: RefactorSuggestion[]) => void
+  dismissAISuggestion: (id: string) => void
+  executeRefactor: (id: string) => Promise<void>
 }
 
 const calcProgress = (routines: Routine[]) => {
@@ -149,6 +167,7 @@ export const useStore = create<AppState>()((set, get) => ({
   dailyLogs: [],
   objectives: [],
   isFetching: false,
+  aiSuggestions: [],
 
   fetchData: async () => {
     set({ isFetching: true })
@@ -180,11 +199,19 @@ export const useStore = create<AppState>()((set, get) => ({
       }))
     }))
 
-    const contacts = (contactsRes.data || []).map((c: any) => ({
-      ...c,
-      lastInteraction: c.last_interaction,
-      investmentRatio: c.investment_ratio
-    }))
+    const contacts = (contactsRes.data || []).map((c: any) => {
+      // Mapping phase to tags if no tags exist
+      const tags = c.tags || [c.phase];
+      return {
+        ...c,
+        lastInteraction: c.last_interaction,
+        investmentRatio: c.investment_ratio,
+        tags,
+        contactFrequency: c.contact_frequency || 'none',
+        relationshipType: c.relationship_type || 'personal',
+        interactions: c.interactions || []
+      }
+    })
 
     const events = (eventsRes.data || []).map((e: any) => ({
       ...e,
@@ -259,13 +286,25 @@ export const useStore = create<AppState>()((set, get) => ({
       user_id: user.user?.id,
       last_interaction: contact.lastInteraction,
       investment_ratio: contact.investmentRatio,
+      tags: [],
+      contact_frequency: 'none',
+      relationship_type: 'personal',
+      interactions: []
     }
     delete (payload as any).lastInteraction
     delete (payload as any).investmentRatio
 
     const { data } = await supabase.from('contacts').insert(payload).select().single()
     if (data) {
-      const newContact = { ...data, lastInteraction: data.last_interaction, investmentRatio: data.investment_ratio }
+      const newContact = { 
+        ...data, 
+        lastInteraction: data.last_interaction, 
+        investmentRatio: data.investment_ratio,
+        tags: data.tags || [],
+        contactFrequency: data.contact_frequency || 'none',
+        relationshipType: data.relationship_type || 'personal',
+        interactions: data.interactions || []
+      }
       set((state) => ({ contacts: [...state.contacts, newContact] }))
     }
   },
@@ -274,6 +313,8 @@ export const useStore = create<AppState>()((set, get) => ({
     const payload: any = { ...updatedContact }
     if (payload.lastInteraction) { payload.last_interaction = payload.lastInteraction; delete payload.lastInteraction }
     if (payload.investmentRatio !== undefined) { payload.investment_ratio = payload.investmentRatio; delete payload.investmentRatio }
+    if (payload.contactFrequency) { payload.contact_frequency = payload.contactFrequency; delete payload.contactFrequency }
+    if (payload.relationshipType) { payload.relationship_type = payload.relationshipType; delete payload.relationshipType }
 
     set((state) => ({
       contacts: state.contacts.map(c => c.id === id ? { ...c, ...updatedContact } : c)
@@ -284,6 +325,43 @@ export const useStore = create<AppState>()((set, get) => ({
   deleteContact: async (id) => {
     set((state) => ({ contacts: state.contacts.filter(c => c.id !== id) }))
     await supabase.from('contacts').delete().eq('id', id)
+  },
+
+  addInteraction: async (contactId, interaction) => {
+    set((state) => ({
+      contacts: state.contacts.map(c => {
+        if (c.id === contactId) {
+          const updatedInteractions = [interaction, ...c.interactions]
+          return {
+            ...c,
+            interactions: updatedInteractions,
+            lastInteraction: interaction.date
+          }
+        }
+        return c
+      })
+    }))
+    
+    // En Supabase actualizamos el campo JSONB de interacciones y el last_interaction
+    const contact = get().contacts.find(c => c.id === contactId)
+    if (contact) {
+      await supabase.from('contacts').update({
+        interactions: contact.interactions,
+        last_interaction: interaction.date
+      }).eq('id', contactId)
+    }
+  },
+
+  getFilteredContacts: (search) => {
+    const contacts = get().contacts;
+    if (!search) return contacts;
+    
+    const lowSearch = search.toLowerCase();
+    return contacts.filter(c => 
+      c.name.toLowerCase().includes(lowSearch) || 
+      c.tags.some(t => t.toLowerCase().includes(lowSearch)) ||
+      c.relationshipType.toLowerCase().includes(lowSearch)
+    );
   },
 
   // ROUTINES & TASKS
@@ -533,5 +611,42 @@ export const useStore = create<AppState>()((set, get) => ({
       })
     }))
     await supabase.from('key_results').delete().eq('id', id)
+  },
+
+  // AI SUGGESTIONS
+  addAISuggestions: (suggestions) => set((state) => ({
+    aiSuggestions: [...state.aiSuggestions, ...suggestions]
+  })),
+
+  dismissAISuggestion: (id) => set((state) => ({
+    aiSuggestions: state.aiSuggestions.filter(s => s.id !== id)
+  })),
+
+  executeRefactor: async (id) => {
+    const suggestion = get().aiSuggestions.find(s => s.id === id);
+    if (!suggestion) return;
+
+    try {
+      switch (suggestion.tool) {
+        case 'create_event':
+          await get().addEvent(suggestion.params);
+          break;
+        case 'adjust_okr':
+          {
+            const { id: krId, objectiveId, value } = suggestion.params;
+            await get().updateKeyResult(krId, objectiveId, value);
+          }
+          break;
+        case 'add_routine':
+          {
+            const { routineId, title } = suggestion.params;
+            await get().addTask(routineId, title);
+          }
+          break;
+      }
+      get().dismissAISuggestion(id);
+    } catch (error) {
+      console.error('Error executing refactor:', error);
+    }
   },
 }))
