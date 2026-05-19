@@ -9,6 +9,7 @@ import { OnboardingTour } from '@/components/onboarding/OnboardingTour';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { supabase } from '@/lib/supabase';
 import { seedDemoData } from '@/utils/seedDemoData';
+import { Toaster } from 'sonner';
 
 // UI & Layouts
 import { MainLayout } from '@/layouts/MainLayout';
@@ -149,6 +150,7 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
+      <Toaster theme="dark" position="top-center" richColors />
       <AppContent />
     </AuthProvider>
   );

@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore } from './useStore';
+import { handleSupabaseError } from '@/lib/utils';
+
+// Mock utils
+vi.mock('@/lib/utils', async () => {
+  const actual = await vi.importActual('@/lib/utils');
+  return {
+    ...actual as any,
+    handleSupabaseError: vi.fn(),
+  };
+});
 
 // Mock Supabase
 vi.mock('@/lib/supabase', () => ({
@@ -97,3 +107,33 @@ describe('useStore CRM Extensions', () => {
     expect(getFilteredContacts('')).toHaveLength(3);
   });
 });
+
+describe('useStore Error Handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should call handleSupabaseError if addContact fails', async () => {
+    // Inject a failure mock for the insert operation
+    const mockError = { message: 'Insert failed', code: '500' };
+    const { supabase } = await import('@/lib/supabase');
+    
+    // We override the global mock specifically for this test
+    vi.mocked(supabase.from).mockImplementationOnce(() => ({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: mockError }),
+    }) as any);
+
+    const { addContact } = useStore.getState();
+    const initialContactsLength = useStore.getState().contacts.length;
+
+    await addContact({ name: 'Failing Contact' } as any);
+
+    expect(handleSupabaseError).toHaveBeenCalledWith(mockError, 'Error al guardar el contacto.');
+    
+    // The state should not be mutated
+    expect(useStore.getState().contacts.length).toBe(initialContactsLength);
+  });
+});
+
