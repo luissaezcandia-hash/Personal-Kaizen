@@ -32,19 +32,22 @@ function AppContent() {
 
   const { 
     dailyProgress, streak, events, logDayStart, saveReflection, 
-    dailyLogs, objectives, addAISuggestions 
+    dailyLogs, todayLog, objectives, addAISuggestions, isFetching 
   } = useStore();
 
   // Onboarding & Initial Ritual Logic
   useEffect(() => {
-    if (session) {
+    // Wait until data is fetched so we know if todayLog exists
+    if (session && !isFetching) {
       if (!localStorage.getItem(ONBOARDING_KEY)) {
         setShowTour(true);
-      } else {
+      } else if (!todayLog) {
         setShowStartRitual(true);
+      } else {
+        setShowStartRitual(false);
       }
     }
-  }, [session]);
+  }, [session, todayLog, isFetching]);
 
   const handleTourComplete = () => {
     localStorage.setItem(ONBOARDING_KEY, 'true');
