@@ -26,6 +26,8 @@ export async function seedDemoData(): Promise<void> {
     supabase.from('objectives').delete().eq('user_id', uid),
     supabase.from('courses').delete().eq('user_id', uid),
     supabase.from('contacts').delete().eq('user_id', uid),
+    supabase.from('tasks').delete().eq('user_id', uid),
+    supabase.from('routines').delete().eq('user_id', uid),
   ])
 
   // ── DAILY LOGS: 7 días de racha ──────────────────────────────────────────
@@ -128,4 +130,30 @@ export async function seedDemoData(): Promise<void> {
       notes: '45 días sin contacto. Evaluar si vale la pena reactivar.',
     },
   ])
+
+  // ── ROUTINES & TASKS (FITNESS) ───────────────────────────────────────────
+  const { data: insertedRoutines } = await supabase.from('routines').insert([
+    { user_id: uid, name: 'Rutina Fuerza (Empuje)' },
+    { user_id: uid, name: 'Rutina Fuerza (Jalón)' },
+    { user_id: uid, name: 'Movilidad & Core' },
+  ]).select()
+
+  if (insertedRoutines && insertedRoutines.length === 3) {
+    const [push, pull, core] = insertedRoutines
+    await supabase.from('tasks').insert([
+      // Empuje
+      { user_id: uid, routine_id: push.id, title: 'Press de Banca 4x8', completed: false },
+      { user_id: uid, routine_id: push.id, title: 'Press Militar 3x10', completed: false },
+      { user_id: uid, routine_id: push.id, title: 'Fondos en paralelas 3x12', completed: false },
+      { user_id: uid, routine_id: push.id, title: 'Elevaciones laterales 4x15', completed: false },
+      // Jalón
+      { user_id: uid, routine_id: pull.id, title: 'Dominadas 4x8', completed: false },
+      { user_id: uid, routine_id: pull.id, title: 'Remo con barra 3x10', completed: false },
+      { user_id: uid, routine_id: pull.id, title: 'Curl de bíceps 3x12', completed: false },
+      // Core
+      { user_id: uid, routine_id: core.id, title: 'Planchas 3x60s', completed: false },
+      { user_id: uid, routine_id: core.id, title: 'Rueda abdominal 3x10', completed: false },
+      { user_id: uid, routine_id: core.id, title: 'Estiramiento dinámico 10 min', completed: false },
+    ])
+  }
 }
